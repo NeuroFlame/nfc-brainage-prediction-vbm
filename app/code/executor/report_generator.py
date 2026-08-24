@@ -1,5 +1,5 @@
 """
-Generates index.html for Brain Age Prediction FNC GICA results.
+Generates index.html for Brain Age Prediction VBM results.
 
 Algorithm reference:
   Basodi S, Raja R, Liu J, Verner E, and Calhoun V.
@@ -39,7 +39,7 @@ SCIENTIFIC_CONTEXT = """
       Basodi S, Raja R, Liu J, Verner E, and Calhoun V.
       <em>Decentralized approaches for Brain Age Prediction.</em> TReNDS Center.
     </blockquote>
-    <p>The algorithm was validated on <strong>UKBiobank</strong> resting-state fMRI data from
+    <p>The algorithm was originally validated on <strong>UKBiobank</strong> resting-state fMRI data from
     <strong>11,754 subjects</strong> (ages 44–80 years), preprocessed with FSL/SPM12 and group ICA
     to yield 53 intrinsic connectivity networks. The 1,378 upper-triangular FNC values per subject
     were used as features. Data was distributed across 6 sites (1 owner + 5 members),
@@ -61,28 +61,12 @@ SCIENTIFIC_CONTEXT = """
         </tr>
       </tbody>
     </table>
-    <p class="note">Results from your run will vary based on dataset size, age range, number of ICA
-    components, number of member sites, and the random train/test split. The paper used 11,754 subjects
-    across 5 member sites with 5 repeated runs — small datasets will show higher variance.</p>
+    <p class="note">This reference table is from the paper's original FNC/GICA connectivity-matrix
+    validation run, not VBM voxel data — the algorithm is identical, but the feature type, dataset
+    size, and age range differ, so treat it as context rather than a direct benchmark for this run.
+    Results from your run will vary based on dataset size, age range, voxel downsampling, number of
+    member sites, and the random train/test split.</p>
 """
-
-# COINSTAC reference run using the same test dataset (site1 = owner, site2 = member,
-# identical 20-subject data, same SVR params). Metrics vary between runs due to the
-# random train/test split (no fixed random_state on the split step).
-COINSTAC_REF = {
-    "w_owner":          3.6133,
-    "intercept_owner":  16.3894,
-    "rmse_train_owner": 1.3441,
-    "rmse_test_owner":  0.8761,
-    "mae_train_owner":  1.2498,
-    "mae_test_owner":   0.7417,
-    "rmse_train_local": 0.000293,
-    "rmse_test_local":  0.9371,
-    "mae_train_local":  0.000220,
-    "mae_test_local":   0.6901,
-    "w_local_0":        0.033596,
-    "intercept_local":  0.052848,
-}
 
 
 # ---------------------------------------------------------------------------
@@ -107,10 +91,8 @@ def _build_owner_report(r: dict, site_name: str) -> str:
     mae_bar_train  = _bar(mae_train,  max(mae_train, mae_test) or 1)
     mae_bar_test   = _bar(mae_test,   max(mae_train, mae_test) or 1)
 
-    ref = COINSTAC_REF
-
     return _wrap(f"""
-    <h1>Brain Age Prediction FNC GICA</h1>
+    <h1>Brain Age Prediction VBM</h1>
     <p class="subtitle">Owner Site Results &mdash; {site_name}</p>
     <hr>
 
@@ -133,14 +115,13 @@ def _build_owner_report(r: dict, site_name: str) -> str:
     </div>
 
     <h2>Model Performance</h2>
-    <p>The owner site projected its FNC data through the federated weight average
+    <p>The owner site projected its cached VBM feature matrix through the federated weight average
     <code>U&nbsp;=&nbsp;X&nbsp;&middot;&nbsp;w&#772;</code> and trained a final LinearSVR on the
-    compressed features. Errors are in <strong>years of brain age</strong>. The COINSTAC column
-    shows a reference run on the same dataset using the original COINSTAC implementation.</p>
+    compressed features. Errors are in <strong>years of brain age</strong>.</p>
 
     <table>
       <thead>
-        <tr><th>Metric</th><th>This run (train)</th><th>This run (test)</th><th>Gap</th><th>COINSTAC ref (test)</th></tr>
+        <tr><th>Metric</th><th>This run (train)</th><th>This run (test)</th><th>Gap</th></tr>
       </thead>
       <tbody>
         <tr>
@@ -148,42 +129,36 @@ def _build_owner_report(r: dict, site_name: str) -> str:
           <td>{rmse_train:.4f}{rmse_bar_train}</td>
           <td>{rmse_test:.4f}{rmse_bar_test}</td>
           <td class="{_gap_class(gap_rmse)}">{gap_rmse:+.4f}</td>
-          <td class="ref">{ref['rmse_test_owner']:.4f}</td>
         </tr>
         <tr>
           <td>MAE (years)</td>
           <td>{mae_train:.4f}{mae_bar_train}</td>
           <td>{mae_test:.4f}{mae_bar_test}</td>
           <td class="{_gap_class(gap_mae)}">{gap_mae:+.4f}</td>
-          <td class="ref">{ref['mae_test_owner']:.4f}</td>
         </tr>
         <tr>
           <td>Subjects</td>
           <td>{n_train}</td>
           <td>{n_test}</td>
           <td>—</td>
-          <td class="ref">18 / 2</td>
         </tr>
       </tbody>
     </table>
     <p class="note">Variation between runs is expected — the train/test split is random and the test
-    set is only {n_test} subject(s). Metrics will be consistent across implementations for the same
-    split.</p>
+    set is only {n_test} subject(s).</p>
 
     <h2>Model Parameters</h2>
     <table>
-      <thead><tr><th>Parameter</th><th>This run</th><th>COINSTAC ref</th><th>Description</th></tr></thead>
+      <thead><tr><th>Parameter</th><th>This run</th><th>Description</th></tr></thead>
       <tbody>
         <tr>
           <td>SVR weight (w_owner)</td>
           <td>{_fmt(w_owner)}</td>
-          <td class="ref">{ref['w_owner']:.6f}</td>
           <td>Scalar weight for the projected feature dimension U</td>
         </tr>
         <tr>
           <td>Intercept</td>
           <td>{_fmt(intercept)}</td>
-          <td class="ref">{ref['intercept_owner']:.6f}</td>
           <td>SVR model intercept (bias term)</td>
         </tr>
       </tbody>
@@ -194,7 +169,7 @@ def _build_owner_report(r: dict, site_name: str) -> str:
       <thead><tr><th>Round</th><th>Role</th><th>Action</th></tr></thead>
       <tbody>
         <tr><td>Round 0</td><td>Member sites</td>
-            <td>Train local LinearSVR on FNC features; send weight vector to server</td></tr>
+            <td>Train local LinearSVR on VBM features; send weight vector to server</td></tr>
         <tr><td>Round 0</td><td><strong>This site (owner)</strong></td>
             <td>Cache train/test split for holdout evaluation</td></tr>
         <tr><td>Aggregation</td><td>Server</td>
@@ -231,10 +206,8 @@ def _build_local_report(r: dict, site_name: str) -> str:
     mae_bar_train  = _bar(mae_train,  max(mae_train, mae_test) or 1)
     mae_bar_test   = _bar(mae_test,   max(mae_train, mae_test) or 1)
 
-    ref = COINSTAC_REF
-
     return _wrap(f"""
-    <h1>Brain Age Prediction FNC GICA</h1>
+    <h1>Brain Age Prediction VBM</h1>
     <p class="subtitle">Member Site Results &mdash; {site_name}</p>
     <hr>
 
@@ -250,9 +223,9 @@ def _build_local_report(r: dict, site_name: str) -> str:
         <div class="card-sub">Root mean square error</div>
       </div>
       <div class="card">
-        <div class="card-label">FNC Features</div>
+        <div class="card-label">Input Features</div>
         <div class="card-value">{n_features}</div>
-        <div class="card-sub">Upper-triangular FNC pairs</div>
+        <div class="card-sub">Flattened VBM voxel values</div>
       </div>
       <div class="card">
         <div class="card-label">Subjects</div>
@@ -262,14 +235,13 @@ def _build_local_report(r: dict, site_name: str) -> str:
     </div>
 
     <h2>Local Model Performance</h2>
-    <p>This site trained a local <code>MinMaxScaler + LinearSVR</code> on all available FNC data and
+    <p>This site trained a local <code>MinMaxScaler + LinearSVR</code> on all available VBM data and
     contributed the learned weight vector to the federated aggregation. Errors are in
-    <strong>years of brain age</strong>. The COINSTAC column shows a reference run on the same
-    dataset using the original COINSTAC implementation.</p>
+    <strong>years of brain age</strong>.</p>
 
     <table>
       <thead>
-        <tr><th>Metric</th><th>This run (train)</th><th>This run (test)</th><th>Gap</th><th>COINSTAC ref (test)</th></tr>
+        <tr><th>Metric</th><th>This run (train)</th><th>This run (test)</th><th>Gap</th></tr>
       </thead>
       <tbody>
         <tr>
@@ -277,37 +249,32 @@ def _build_local_report(r: dict, site_name: str) -> str:
           <td>{rmse_train:.6f}{rmse_bar_train}</td>
           <td>{rmse_test:.6f}{rmse_bar_test}</td>
           <td class="{_gap_class(gap_rmse)}">{gap_rmse:+.6f}</td>
-          <td class="ref">{ref['rmse_test_local']:.6f}</td>
         </tr>
         <tr>
           <td>MAE (years)</td>
           <td>{mae_train:.6f}{mae_bar_train}</td>
           <td>{mae_test:.6f}{mae_bar_test}</td>
           <td class="{_gap_class(gap_mae)}">{gap_mae:+.6f}</td>
-          <td class="ref">{ref['mae_test_local']:.6f}</td>
         </tr>
         <tr>
           <td>Subjects</td>
           <td>{n_train}</td>
           <td>{n_test}</td>
           <td>—</td>
-          <td class="ref">18 / 2</td>
         </tr>
       </tbody>
     </table>
 
     <h2>Contribution to Federation</h2>
     <table>
-      <thead><tr><th>Item</th><th>This run</th><th>COINSTAC ref</th></tr></thead>
+      <thead><tr><th>Item</th><th>This run</th></tr></thead>
       <tbody>
-        <tr><td>Weight vector length</td><td>{n_features} coefficients</td><td class="ref">{n_features}</td></tr>
-        <tr><td>Weight vector mean</td><td>{_fmt(_safe_mean(w_local))}</td><td class="ref">—</td></tr>
-        <tr><td>Weight vector min</td><td>{_fmt(_safe_min(w_local))}</td><td class="ref">—</td></tr>
-        <tr><td>Weight vector max</td><td>{_fmt(_safe_max(w_local))}</td><td class="ref">—</td></tr>
-        <tr><td>w_local[0]</td><td>{_fmt(w_local[0] if w_local else 0)}</td>
-            <td class="ref">{ref['w_local_0']:.6f}</td></tr>
-        <tr><td>Intercept</td><td>{_fmt(_safe_first(r.get("intercept_local")))}</td>
-            <td class="ref">{ref['intercept_local']:.6f}</td></tr>
+        <tr><td>Weight vector length</td><td>{n_features} coefficients</td></tr>
+        <tr><td>Weight vector mean</td><td>{_fmt(_safe_mean(w_local))}</td></tr>
+        <tr><td>Weight vector min</td><td>{_fmt(_safe_min(w_local))}</td></tr>
+        <tr><td>Weight vector max</td><td>{_fmt(_safe_max(w_local))}</td></tr>
+        <tr><td>w_local[0]</td><td>{_fmt(w_local[0] if w_local else 0)}</td></tr>
+        <tr><td>Intercept</td><td>{_fmt(_safe_first(r.get("intercept_local")))}</td></tr>
       </tbody>
     </table>
     <p class="note">Small differences in weight values between runs are due to the random train/test
@@ -318,7 +285,7 @@ def _build_local_report(r: dict, site_name: str) -> str:
       <thead><tr><th>Round</th><th>Role</th><th>Action</th></tr></thead>
       <tbody>
         <tr><td>Round 0</td><td><strong>This site (member)</strong></td>
-            <td>Train local LinearSVR on FNC features; send w_local to server</td></tr>
+            <td>Train local LinearSVR on VBM features; send w_local to server</td></tr>
         <tr><td>Round 0</td><td>Owner site</td>
             <td>Cache holdout train/test split for final evaluation</td></tr>
         <tr><td>Aggregation</td><td>Server</td>
@@ -334,7 +301,7 @@ def _build_local_report(r: dict, site_name: str) -> str:
 
 
 def _build_empty_report() -> str:
-    return _wrap("<h1>Brain Age Prediction FNC GICA</h1><p>No results available.</p>")
+    return _wrap("<h1>Brain Age Prediction VBM</h1><p>No results available.</p>")
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +352,7 @@ def _wrap(body: str) -> str:
     return f"""<!DOCTYPE html>
 <html>
   <head>
-    <title>Brain Age Prediction FNC GICA &mdash; Results</title>
+    <title>Brain Age Prediction VBM &mdash; Results</title>
     <style>
       *, *::before, *::after {{ box-sizing: border-box; }}
       body {{ font-family: sans-serif; color: #222; margin: 0; padding: 32px 40px; background: #f9f9f9; }}

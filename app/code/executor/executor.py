@@ -35,12 +35,13 @@ class BrainAgeFNCExecutor(Executor):
             data_dir = get_data_directory_path(fl_ctx)
             splits = load_site_data(
                 data_dir=data_dir,
-                data_file="coinstac-gica_postprocess_results.mat",
-                label_file="covariates.csv",
+                data_file=computation_parameters.get("data_file"),
+                label_file=computation_parameters.get("label_file", "covariates.csv"),
                 input_source=computation_parameters["input_source"],
                 split_type=computation_parameters["split_type"],
                 test_size=computation_parameters["test_size"],
                 shuffle=computation_parameters["shuffle"],
+                vbm_downsample_factor=computation_parameters.get("vbm_downsample_factor", 1),
             )
 
             if is_owner_site(site_name, computation_parameters):

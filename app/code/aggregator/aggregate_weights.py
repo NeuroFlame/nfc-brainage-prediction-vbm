@@ -1,6 +1,6 @@
 """
-Pure aggregation logic for brainage FNC.
-No NVFlare dependencies.
+Pure aggregation logic for the decentralized brain age SVR computation.
+Format-agnostic (VBM, GICA, or UKBioBank features) — no NVFlare dependencies.
 """
 
 from typing import List, Dict, Any

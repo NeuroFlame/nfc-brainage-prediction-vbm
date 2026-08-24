@@ -1,6 +1,7 @@
 """
-Pure computation logic for the brainage FNC local SVR steps.
-No NVFlare dependencies — all inputs and outputs are plain Python/numpy objects.
+Pure computation logic for the decentralized brain age SVR steps.
+Format-agnostic (VBM, GICA, or UKBioBank features) — no NVFlare dependencies,
+all inputs and outputs are plain Python/numpy objects.
 """
 
 import numpy as np
@@ -14,20 +15,28 @@ from _utils.preprocessor_utils import split_xy_data
 
 def load_site_data(data_dir: str, data_file: str, label_file: str,
                    input_source: str, split_type: str,
-                   test_size: float, shuffle: bool) -> dict:
+                   test_size: float, shuffle: bool,
+                   vbm_downsample_factor: int = 1) -> dict:
     """
-    Load FNC data and covariates, form X/y matrices, and split into train/test.
+    Load site data and covariates, form X/y matrices, and split into train/test.
 
-    :param data_dir: Directory containing data_file and label_file.
-    :param data_file: Filename of the .mat FNC data file.
-    :param label_file: Filename of the covariates CSV (must contain an 'age' column).
-    :param input_source: 'GICA' or 'UKBioBank_Comp2019'.
+    :param data_dir: Directory containing data_file and label_file (VBM: also the
+                     directory holding the per-subject NIfTI files).
+    :param data_file: Filename of the .mat FNC data file. Unused for VBM, where
+                      each subject's data lives in its own NIfTI file instead.
+    :param label_file: Filename of the covariates CSV. Must contain an 'age' column
+                       ('niftifilename' is also required for VBM).
+    :param input_source: 'GICA', 'UKBioBank_Comp2019', or 'VBM'.
     :param split_type: 'random' or 'age_range_stratified'.
     :param test_size: Fraction of subjects reserved for testing.
     :param shuffle: Whether to shuffle before splitting.
+    :param vbm_downsample_factor: VBM only — stride applied to each spatial axis of
+                                  the NIfTI volumes to reduce voxel count. Must be
+                                  the same across all sites.
     :return: Dict with keys X_train, X_test, y_train, y_test.
     """
-    X, y = form_XYMatrices(data_dir, input_source, data_file, label_file)
+    X, y = form_XYMatrices(data_dir, input_source, data_file, label_file,
+                           vbm_downsample_factor=vbm_downsample_factor)
     X_train, X_test, y_train, y_test = split_xy_data(split_type, X, y, test_size, shuffle)
     return {
         "X_train": X_train,
@@ -90,8 +99,8 @@ def train_owner_svr(X_train: np.ndarray, X_test: np.ndarray,
     LinearSVR on the projected (1-D) features.
 
     This is the owner site's round-1 computation. The projection U = X @ w_avg
-    compresses the FNC feature space into a scalar that captures the shared
-    cross-site signal, which the owner then re-fits.
+    compresses the high-dimensional input feature space into a scalar that
+    captures the shared cross-site signal, which the owner then re-fits.
 
     :param X_train: Owner training feature matrix (cached from round 0).
     :param X_test: Owner test feature matrix.
@@ -117,7 +126,7 @@ def train_owner_svr(X_train: np.ndarray, X_test: np.ndarray,
     svr_model = pipeline.named_steps["linearsvr"]
     w_owner = np.squeeze(svr_model.coef_)
     fit_intercept = svr_params.get("fit_intercept", True)
-    intercept_owner = float(svr_model.intercept_) if fit_intercept else 0.0
+    intercept_owner = float(np.ravel(svr_model.intercept_)[0]) if fit_intercept else 0.0
 
     train_metrics = get_metrics(y_train, pipeline.predict(U_train))
     test_metrics = get_metrics(y_test, pipeline.predict(U_test))

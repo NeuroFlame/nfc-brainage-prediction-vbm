@@ -1,7 +1,9 @@
 {
-  "data_file": "coinstac-gica_postprocess_results.mat",
+  "owner_site": "site1",
+  "data_file": null,
   "label_file": "covariates.csv",
-  "input_source": "GICA",
+  "input_source": "VBM",
+  "vbm_downsample_factor": 2,
   "split_type": "random",
   "test_size": 0.1,
   "shuffle": true,

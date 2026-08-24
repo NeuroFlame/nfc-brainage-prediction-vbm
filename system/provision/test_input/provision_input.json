@@ -4,7 +4,7 @@
         {"id": "66289c79aebab67040a20069", "name": "site2"},
         {"id": "66289c79aebab67040a20070", "name": "site3"}
     ],
-    "computation_parameters": "{\"input_source\": \"GICA\", \"split_type\": \"random\", \"test_size\": 0.1, \"shuffle\": true, \"svr_params_local\": {\"epsilon\": 0, \"tol\": 0.0001, \"C\": 1, \"loss\": \"epsilon_insensitive\", \"fit_intercept\": true, \"intercept_scaling\": 1, \"dual\": true, \"random_state\": 0, \"max_iter\": 10000}, \"svr_params_owner\": {\"epsilon\": 0, \"tol\": 0.0001, \"C\": 1, \"loss\": \"epsilon_insensitive\", \"fit_intercept\": true, \"intercept_scaling\": 1, \"dual\": true, \"random_state\": 0, \"max_iter\": 10000}}",
+    "computation_parameters": "{\"data_file\": null, \"label_file\": \"covariates.csv\", \"input_source\": \"VBM\", \"vbm_downsample_factor\": 2, \"split_type\": \"random\", \"test_size\": 0.1, \"shuffle\": true, \"svr_params_local\": {\"epsilon\": 0, \"tol\": 0.0001, \"C\": 1, \"loss\": \"epsilon_insensitive\", \"fit_intercept\": true, \"intercept_scaling\": 1, \"dual\": true, \"random_state\": 0, \"max_iter\": 10000}, \"svr_params_owner\": {\"epsilon\": 0, \"tol\": 0.0001, \"C\": 1, \"loss\": \"epsilon_insensitive\", \"fit_intercept\": true, \"intercept_scaling\": 1, \"dual\": true, \"random_state\": 0, \"max_iter\": 10000}}",
     "fed_learn_port": 5000,
     "admin_port": 5001,
     "host_identifier": "host1"

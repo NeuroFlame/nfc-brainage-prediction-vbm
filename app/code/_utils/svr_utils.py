@@ -9,6 +9,11 @@ import pandas as pd
 from scipy.io import loadmat
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
+try:
+    import nibabel as nib
+except ImportError:
+    nib = None
+
 from _utils.preprocessor_utils import get_upper_diagonal_values, split_xy_data
 import _utils.preprocessor_utils as preut
 
@@ -20,6 +25,33 @@ def read_fnc_gica(file_dir, file_name):
     fnc_data = data[:, 0, :, :]
 
     return fnc_data
+
+
+def read_vbm_image(file_dir, file_name, downsample_factor=1):
+    """
+    Load a single-subject VBM NIfTI volume (e.g. an SPM `swc1*.nii[.gz]` smoothed,
+    warped, modulated grey-matter density map) as a 3D numpy array.
+
+    :param file_dir: Directory containing the NIfTI file.
+    :param file_name: NIfTI filename (`.nii` or `.nii.gz`).
+    :param downsample_factor: Stride applied along each spatial axis to reduce the
+                              voxel count (e.g. 2 keeps every other voxel). Must be
+                              the same for every subject/site so all sites end up
+                              with matching feature-vector lengths.
+    :return: 3D float32 numpy array of voxel intensities.
+    """
+    if nib is None:
+        raise ImportError(
+            "nibabel is required to read VBM NIfTI files. Install with `pip install nibabel`."
+        )
+
+    img = nib.load(os.path.join(file_dir, file_name))
+    data = img.get_fdata(dtype=np.float32)
+
+    if downsample_factor and downsample_factor > 1:
+        data = data[::downsample_factor, ::downsample_factor, ::downsample_factor]
+
+    return data
 
 
 def read_fnc_ukbiobank(file_dir, file_name):
@@ -49,13 +81,20 @@ It returns as outputs:
 """
 
 
-def form_XYMatrices(input_dir, input_source, data_file, label_file):
+def form_XYMatrices(input_dir, input_source, data_file, label_file, vbm_downsample_factor=1):
     if input_source == "GICA":
         X, y, subj_ref_data = form_XYMatrices_gica(input_dir, data_file, label_file)
 
     elif input_source == "UKBioBank_Comp2019":
         X, y, subj_ref_data = form_XYMatrices_ukbiobank(input_dir, data_file, label_file,
                                                             extract_icn_features_only=True)
+
+    elif input_source == "VBM":
+        X, y, subj_ref_data = form_XYMatrices_vbm(input_dir, label_file,
+                                                    downsample_factor=vbm_downsample_factor)
+
+    else:
+        raise ValueError(f"Unknown input_source: {input_source!r}")
 
     return X, y
 
@@ -74,6 +113,70 @@ def form_XYMatrices_gica(input_dir, data_file, label_file):
     Extract only the FNC matrix corresponding to icn_ins_indexes
     """
     X = preut.get_upper_diagonal_values(fnc_data)
+
+    return X, y, subj_ref_data
+
+
+def form_XYMatrices_vbm(input_dir, label_file, downsample_factor=1,
+                        subject_col="niftifilename", age_col="age"):
+    """
+    Build the VBM feature matrix from a directory of per-subject NIfTI grey-matter
+    density maps plus a covariates CSV.
+
+    Unlike the FNC formats above (a single .mat/.h5 file holding every subject),
+    VBM data ships as one NIfTI file per subject, named in the covariates CSV.
+    Each subject's volume is loaded, optionally downsampled, and flattened into a
+    feature vector; the flattened vectors are stacked into X in covariate-row order.
+
+    :param input_dir: Directory containing the covariates CSV and NIfTI files.
+    :param label_file: Covariates CSV filename. Must contain a subject/filename
+                       column (default 'niftifilename') and an age column
+                       (default 'age').
+    :param downsample_factor: Stride passed to read_vbm_image(); must be identical
+                              across all sites so feature vectors line up.
+    :param subject_col: Covariates column holding each subject's NIfTI filename.
+    :param age_col: Covariates column holding the regression target.
+    :return: (X, y, subj_ref_data) — X is (subjects x voxels), y is (subjects,).
+    """
+    covariate_df = pd.read_csv(os.path.join(input_dir, label_file))
+    covariate_df.columns = covariate_df.columns.str.strip()
+
+    if subject_col not in covariate_df.columns or age_col not in covariate_df.columns:
+        raise KeyError(
+            f"Covariates file '{label_file}' must contain '{subject_col}' and '{age_col}' "
+            f"columns; found {list(covariate_df.columns)}."
+        )
+
+    covariate_df[subject_col] = covariate_df[subject_col].astype(str).str.strip()
+
+    n_rows = len(covariate_df)
+    covariate_df = covariate_df.dropna(subset=[age_col, subject_col]).reset_index(drop=True)
+    if len(covariate_df) < n_rows:
+        print(f"Dropped {n_rows - len(covariate_df)} row(s) from {label_file} with missing "
+              f"'{subject_col}' or '{age_col}'.")
+
+    features = []
+    ref_shape = None
+    for file_name in covariate_df[subject_col]:
+        file_path = os.path.join(input_dir, file_name)
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(
+                f"NIfTI file listed in {label_file} not found: {file_path}"
+            )
+
+        volume = read_vbm_image(input_dir, file_name, downsample_factor=downsample_factor)
+        if ref_shape is None:
+            ref_shape = volume.shape
+        elif volume.shape != ref_shape:
+            raise ValueError(
+                f"Volume shape mismatch for {file_name}: expected {ref_shape}, got "
+                f"{volume.shape}. All subjects must share the same image grid."
+            )
+        features.append(volume.reshape(-1))
+
+    X = np.vstack(features)
+    y = covariate_df[age_col].to_numpy(dtype=np.float64)
+    subj_ref_data = covariate_df[subject_col].tolist()
 
     return X, y, subj_ref_data
 
