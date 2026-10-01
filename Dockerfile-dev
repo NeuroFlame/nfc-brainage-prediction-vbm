@@ -1,22 +1,7 @@
-FROM python:3.8-bullseye
+FROM python:3.11-bookworm
 
 RUN python3 -m pip install -U pip
 RUN python3 -m pip install -U setuptools
-
-# Install cryptography explicitly before nvflare to ensure pkcs12 support.
-# nvflare requires cryptography>=36.0.0; older base images can resolve a
-# version that predates pkcs12, causing provisioning to fail with:
-#   AttributeError: module '...serialization' has no attribute 'pkcs12'
-RUN python3 -m pip install "cryptography>=36.0.0"
-RUN python3 -m pip install nvflare==2.4.0
-
-# Patch nvflare's cert.py to fix missing pkcs12 attribute on older cryptography.
-# cryptography>=3.5 has the pkcs12 submodule but doesn't auto-attach it to the
-# serialization namespace until >=36.x. The nvflare CLI runs as a subprocess so
-# a runtime shim in entry_provision.py cannot reach it — the fix must be on disk.
-RUN CERT=/usr/local/lib/python3.8/site-packages/nvflare/lighter/impl/cert.py && \
-    sed -i 's/^from cryptography.hazmat.primitives import hashes, serialization$/from cryptography.hazmat.primitives import hashes, serialization\ntry:\n    _ = serialization.pkcs12\nexcept AttributeError:\n    from cryptography.hazmat.primitives.serialization import pkcs12 as _pkcs12\n    serialization.pkcs12 = _pkcs12/' "$CERT"
-
 WORKDIR /workspace/
 
 # Copy the requirements.txt file
