@@ -1,5 +1,5 @@
 {
-  "owner_site": "site1",
+  "consortium_leader_id": "site1",
   "data_file": null,
   "label_file": "covariates.csv",
   "input_source": "VBM",

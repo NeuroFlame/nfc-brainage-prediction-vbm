@@ -8,6 +8,8 @@ This computation implements the decentralized brain age prediction algorithm des
 
 The algorithm uses a two-round decentralized Support Vector Regression (SVR). This version takes VBM (voxel-based morphometry) grey-matter density maps as features — one NIfTI volume per subject, typically the smoothed/warped/modulated grey-matter tissue class output of an SPM segmentation pipeline. Each site contributes local model weights without sharing raw subject data. One designated site acts as the "owner" (holdout) site and serves as an independent evaluator; all other sites train local SVR models and contribute their learned weights to the aggregation step.
 
+**Owner site**: The consortium leader identifies their site with the `consortium_leader_id` setting. The leader must take part in the run with data, and at least one other site must participate to train a local model.
+
 The same federated algorithm was originally validated with FNC (functional network connectivity) matrices as features instead of VBM images; `input_source` still supports `"GICA"` and `"UKBioBank_Comp2019"` for that data format.
 
 **Reference dataset (original FNC/GICA validation):** The paper validated the algorithm on **UKBiobank** resting-state fMRI data from **11,754 subjects** (ages 44–80), preprocessed with FSL/SPM12 and ICA to yield 53 intrinsic connectivity networks (ICNs), producing **1,378 upper-triangular FNC features** per subject. Data was distributed across 6 sites (1 owner + 5 members), with 90% train / 10% test per site. The decentralized model achieved RMSE of ~7.5 years and MAE of ~6.3 years on the test set — performance on par with a centralized model trained on all data pooled together. VBM feature counts and expected error will differ; see Settings Specification below.
@@ -16,6 +18,7 @@ The same federated algorithm was originally validated with FNC (functional netwo
 
 ```json
 {
+    "consortium_leader_id": "site1",
     "input_source": "VBM",
     "vbm_downsample_factor": 2,
     "split_type": "random",
@@ -50,15 +53,16 @@ The same federated algorithm was originally validated with FNC (functional netwo
 
 | Variable Name | Type | Description | Allowed Options | Default | Required |
 | --- | --- | --- | --- | --- | --- |
-| `input_source` | `string` | Specifies the format/source of the input data. | `"VBM"`, `"GICA"`, `"UKBioBank_Comp2019"` | none | ✅ true |
+| `consortium_leader_id` | `string` | The consortium leader's site name (or NeuroFLAME user ID). That site is the owner: it holds out its data and trains the final model. | a participating site | — | ✅ true |
+| `input_source` | `string` | Specifies the format/source of the input data. | `"VBM"`, `"GICA"`, `"UKBioBank_Comp2019"` | `"VBM"` | ❌ false |
 | `vbm_downsample_factor` | `int` | VBM only. Stride applied to each spatial axis of the NIfTI volumes to reduce the voxel count (e.g. `2` keeps every other voxel per axis). Must be identical across all sites. | `>= 1` | `1` | ❌ false |
-| `split_type` | `string` | Method used to split each site's data into train and test sets. | `"random"`, `"age_range_stratified"` | none | ✅ true |
-| `test_size` | `float` | Fraction of subjects reserved for the test set at each site. | `0.0` – `1.0` | none | ✅ true |
-| `shuffle` | `boolean` | Whether to shuffle data before splitting. | `true`, `false` | none | ✅ true |
-| `svr_params_local` | `dict` | `sklearn.svm.LinearSVR` keyword arguments applied at non-owner sites during round 0 local training. | See sklearn docs | none | ✅ true |
-| `svr_params_owner` | `dict` | `sklearn.svm.LinearSVR` keyword arguments applied at the owner site during round 1 projected training. | See sklearn docs | none | ✅ true |
+| `split_type` | `string` | Method used to split each site's data into train and test sets. | `"random"`, `"age_range_stratified"` | `"random"` | ❌ false |
+| `test_size` | `float` | Fraction of subjects reserved for the test set at each site. | `0.0` – `1.0` | `0.1` | ❌ false |
+| `shuffle` | `boolean` | Whether to shuffle data before splitting. | `true`, `false` | `true` | ❌ false |
+| `svr_params_local` | `dict` | `sklearn.svm.LinearSVR` keyword arguments applied at non-owner sites during round 0 local training. | See sklearn docs | the values in the example above | ❌ false |
+| `svr_params_owner` | `dict` | `sklearn.svm.LinearSVR` keyword arguments applied at the owner site during round 1 projected training. | See sklearn docs | the values in the example above | ❌ false |
 
-`input_source`, `split_type`, `test_size`, `shuffle`, `svr_params_local`, and `svr_params_owner` have no code-level fallback — omitting any of them from `parameters.json` raises a `KeyError` at runtime. See `test_data/server/parameters.json` for a complete working example of every value above (including `data_file`, `label_file`, `owner_site`, and `site_id_name_map`, which are documented under Input/Output below and are optional with fallbacks).
+See `test_data/server/parameters.json` for a complete working example (including the optional `data_file`, `label_file`, and `site_id_name_map`).
 
 ### Input Description
 
@@ -99,18 +103,18 @@ The key steps of the algorithm include:
     - A `MinMaxScaler + LinearSVR` pipeline is fit on all available local data (train + test combined), maximizing the signal contributed to the federated aggregation.
     - Each site returns its learned weight vector (`w_local`), intercept, and performance metrics (RMSE, MAE) to the server.
 
-2. **Round 0 — Owner Site Caching**:
-    - The owner site loads and splits its data but does not train a model. Instead, it caches the train/test splits in memory for use in round 1.
+2. **Round 0 — Owner Site**:
+    - The owner site loads and splits its data but does not train a model. It keeps its train/test split for use in round 1.
 
 3. **Server Aggregation (between rounds)**:
-    - The server stacks all received local weight vectors into a matrix `w_locals` of shape `(n_features × n_sites)` and broadcasts it to all sites.
+    - The server averages the received local weight vectors into `w_avg` (one value per feature) and broadcasts it to all sites.
 
 4. **Round 1 — Owner Projected SVR**:
-    - The owner site projects its cached feature matrix through the averaged local weights: `U = X @ mean(w_locals, axis=1)`, compressing the high-dimensional voxel space into a single federated signal dimension.
+    - The owner site projects its cached feature matrix through the averaged local weights: `U = X @ w_avg`, compressing the high-dimensional voxel space into a single federated signal dimension.
     - A second `MinMaxScaler + LinearSVR` pipeline is fit on the projected features `U`, and final performance metrics are computed and saved.
 
 5. **Non-Owner Sites (round 1)**:
-    - Non-owner sites receive the aggregated weights broadcast but perform no further computation. They return an empty response.
+    - Non-owner sites receive the aggregated weights but perform no further computation.
 
 ### Assumptions
 
@@ -124,8 +128,8 @@ The key steps of the algorithm include:
 
 ### Output Description
 
-- **Output files**: `local_svr_result.json` (per non-owner site), `owner_svr_result.json` (owner site)
-- Each file is written to the site's output directory at the end of its respective computation round.
+- **Output files**: `local_svr_result.json` (per non-owner site), `owner_svr_result.json` (owner site), and an `index.html` report at every site.
+- All files are written to each site's output directory at the end of the run.
 
 The computation outputs both **site-level** and **owner-level** results, which include:
 
